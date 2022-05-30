@@ -1,0 +1,166 @@
+# https://pypi.org/project/yahoofinancials/
+
+
+from datetime IMPORT datetime
+
+IMPORT yfinance as yahooFinance
+
+IMPORT pyodbc
+
+IMPORT sys
+
+
+
+# USAGE
+
+# >> Fin_Yahoo_Stock_Lookup.py start_date('%Y-%m-%d') start_date('%Y-%m-%d') stock_ticker
+
+# >> EXAPMPLE: Fin_Yahoo_Stock_Lookup.py 2020-10-02 2021-1-03 FB "Jane Doe"
+
+#OUTPUT ('Number of arguments:', len(sys.argv), 'arguments.')
+
+#OUTPUT('Argument List:', str(sys.argv))
+
+
+
+st_date=""
+
+end_date=""
+
+ticker=""
+
+actor=""
+
+delet=""
+
+FOR i IN range(len(sys.argv)):
+
+    IF i==1:
+
+        st_date=datetime.strptime(sys.argv[i], '%Y-%m-%d').strftime('%Y-%m-%d')
+
+    IF i==2:
+
+        SET end_date TO datetime.strptime(sys.argv[i], '%Y-%m-%d').strftime('%Y-%m-%d')
+
+    IF i==3:
+
+        ticker=sys.argv[i]
+
+    IF i==4:
+
+        actor=sys.argv[i]
+
+    IF i==5:
+
+        SET delet TO sys.argv[i]
+
+
+
+
+
+SET t TO str(datetime.today().year) + str(datetime.today().month)+ str(datetime.today().day)+"_"+str(datetime.today().hour)+"_"+str(datetime.today().minute)+"_"+str(datetime.today().second)
+
+OUTPUT(t)
+
+OUTPUT("Program to find history of shares/stock FOR a periodof time using Yahoo")
+
+OUTPUT("Reading DB connection parameters from file...")
+
+# Read DB connection parameters from file
+
+SET f TO open(r"F:\Dissertation\Req 4.1 Fin Fraud\Python\DBConn.txt","r")
+
+SET server TO f.readline().rstrip() # remove any line breaks at the end of the line
+
+SET ESI_DB TO f.readline().rstrip() # remove any line breaks at the end of the line
+
+SET Master_DB TO f.readline().rstrip() # remove any line breaks at the end of the line
+
+f.close()
+
+OUTPUT("File read complete")
+
+
+
+OUTPUT("Opening ESI DB Connection...")
+
+
+OUTPUT("DB Connection successfully opened")
+
+
+
+# Flag delet tells us IF delete and backup is needed. This is cause we sometimes need to run multiple stocks thru this progam
+
+IF delet=='Y':
+
+    OUTPUT("=========== START OF Housekeeping DB TRANSACTIONS ======================================")
+
+    OUTPUT("Now let's run the case ESI through this Yahoo Historical stock program and insert results into [Fin_Stock_Yahoo_Hist] .. ")
+
+    OUTPUT("Backup tables before fresh insert")
+
+    SET sql1 TO "SELECT * INTO [" + ESI_DB +"].[dbo].[Fin_Stock_Yahoo_Hist_BkUp" + t + "] FROM [" + ESI_DB +"].[dbo].[Fin_Stock_Yahoo_Hist]"
+
+    cursor1.execute(sql1)
+
+    conn1.commit()
+
+    OUTPUT("Empty [" + ESI_DB +"].[dbo].[Fin_Stock_Yahoo_Hist] FOR fresh inserts")
+
+    SET del_sql1 TO "DELETE FROM [" + ESI_DB +"].[dbo].[Fin_Stock_Yahoo_Hist] "
+
+    cursor1.execute(del_sql1)
+
+    conn1.commit()
+
+    OUTPUT("=========== END OF Housekeeping DB TRANSACTIONS ======================================")
+
+
+
+
+
+
+
+SET GetFacebookInformation TO yahooFinance.Ticker(ticker)
+
+#OUTPUT(GetFacebookInformation.info)
+
+
+
+OUTPUT("get historical market data FOR the provided start and end dates IN '%Y-%m-%d' format..")
+
+SET # startDate TO datetime(2019, 5, 31)
+
+SET # endDate TO datetime(2021, 1, 30)
+
+# Columns: [Open, High, Low, Close, Volume, Dividends, Stock Splits]
+
+a=GetFacebookInformation.history(start=st_date, end=end_date)
+
+FOR index, row IN a.iterrows():
+
+    #OUTPUT(index, round(row['Open'],2), round(row['High'],2), round(row['Low'],2), row['Volume'])
+
+    SET sql TO "INSERT INTO [" + ESI_DB + "].[dbo].[Fin_Stock_Yahoo_Hist] ([Actor],[Stock_Ticker],[Stock_date]" \
+
+                                     " ,[Stock_Open],[Stock_High],[Stock_Low],[Stock_Close],[Stock_Volume_traded]" \
+
+                                     ",[Stock_Dividends],[Stock_Splits]) VALUES (?,?,?,?,?,?,?,?,?,?)"
+
+    OUTPUT(sql, (actor, ticker, index, round(row['Open'],2), round(row['High'],2), round(row['Low'],2), round(row['Close'],2),row['Volume'],row['Dividends'],row['Stock Splits']))
+
+    cursor1.execute(sql, (actor, ticker, index, round(row['Open'],2), round(row['High'],2), round(row['Low'],2), round(row['Close'],2),row['Volume'],row['Dividends'],row['Stock Splits']))
+
+    conn1.commit()
+
+
+
+
+
+
+
+
+
+
+
