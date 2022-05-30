@@ -1,0 +1,111 @@
+# # create and register an APP on Reddit https://www.reddit.com/prefs/apps
+
+
+IMPORT requests
+IMPORT pandas as pd
+
+IMPORT praw
+
+from datetime IMPORT datetime
+
+SET pd.options.display.width TO 0
+
+
+
+# setup our header info, which gives reddit a brief description of our app
+
+SET reddit TO praw.Reddit(client_id='nnSBDi4942RhP0dr9E5uBA',
+
+                     client_secret='TUTbsHWcBIYDUsiAvO99TpxOqsQrgQ',
+
+                     user_agent='mcode7997SHSU',
+
+                     username='******',
+
+                     password='*****')
+
+
+
+# to verify whether the instance is authorized instance or not
+
+OUTPUT(reddit.read_only)
+
+SET reddit.read_only TO True
+
+
+
+SET sub_reddit TO reddit.subreddit('StockMarket')
+
+# display the subreddit name
+
+OUTPUT(sub_reddit.display_name)
+
+# display the subreddit title
+
+OUTPUT(sub_reddit.title)
+
+# display the subreddit description
+
+OUTPUT(sub_reddit.description)
+
+
+
+SET new_posts TO sub_reddit.new(limit=1000) #max allowed limit=1000
+
+
+
+SET dict TO { "title":[],
+
+                "subreddit":[],
+
+                "score":[],
+
+                "id":[],
+
+                "url":[],
+
+                "comms_num": [],
+
+                "created": [],
+
+                "body":[]}
+
+
+
+FOR submission IN new_posts:
+
+    dict["title"].append(submission.title)
+
+    dict['subreddit'].append(submission.subreddit)
+
+    dict["score"].append(submission.score)
+
+    dict["id"].append(submission.id)
+
+    dict["url"].append(submission.url)
+
+    dict["comms_num"].append(submission.num_comments)
+
+    dict["created"].append(submission.created)
+
+    dict["body"].append(submission.selftext)
+
+
+
+SET df TO pd.DataFrame(dict)
+
+
+
+DEFINE FUNCTION get_date(created):
+
+    RETURN datetime.fromtimestamp(created)
+
+
+
+SET df["created"] TO df['created'].apply(get_date)
+
+df.drop_duplicates(subset=['id'], inplace=True)
+
+
+
+
