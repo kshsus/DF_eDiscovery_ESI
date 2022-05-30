@@ -1,0 +1,75 @@
+
+IMPORT random
+
+IMPORT pyodbc
+
+IMPORT pandas as pd
+
+from nltk.sentiment IMPORT SentimentAnalyzer
+
+from datetime IMPORT datetime
+
+from nltk.sentiment.vader IMPORT SentimentIntensityAnalyzer
+
+from sklearn.metrics IMPORT accuracy_score
+
+from nltk IMPORT sent_tokenize #tokenize sentences FOR MS Office docs
+
+
+OUTPUT("Reading DB connection parameters from file...")
+
+# Read DB connection parameters from file
+
+OUTPUT("DB Connection successfully opened")
+
+# Fetch into pandas dataframe via a select statement
+
+SET df_sql_data TO pd.read_sql_query("SELECT [sentiment],[review] FROM [MasterDB].[dbo].[SentiWordnet_labeledTrainData_stanford]",conn)
+
+SET #data TO pd.read_csv(SentiWordnet_labeledTrainData.tsv, header=0, delimiter="\t", quoting=3)
+
+OUTPUT("Fetch from TBL MasterDB.dbo.SentiWordnet_labeledTrainData_stanford completed")
+
+SET sentiment_data TO list(zip(df_sql_data["review"], df_sql_data["sentiment"]))
+
+
+# 80% FOR training
+
+SET train_X, train_y TO list(zip(*sentiment_data[:20000])) # gives top 20K
+
+# Keep 20% FOR testing
+
+SET test_X, test_y TO list(zip(*sentiment_data[20000:])) # gives bottom 5K
+
+
+
+SET analyzer TO SentimentAnalyzer()
+
+
+
+SET vader TO SentimentIntensityAnalyzer()
+
+DEFINE FUNCTION get_vader_polarity(text):
+
+    """ Transform the output to a binary 0/1 result """
+
+    SET score TO vader.polarity_scores(text)
+
+    OUTPUT(score)
+
+    RETURN 1 IF score['pos'] > score['neg'] else 0
+
+
+
+SET pred_y TO [get_vader_polarity(text) FOR text IN test_X]
+
+model_accuracy=accuracy_score(test_y, pred_y)
+
+SET OUTPUT ("Model accuracy TO ", model_accuracy) 
+
+model_accuracy=round(model_accuracy*100)
+
+
+# Plot Graphs using matplotlib.pyplot
+# START OF DB TRANSACTIONS - RUN Model against case ESI TWitter, SMS/WHATSAPP, MSWord, Facebook and emails and store results in appropriate SQL tables)
+

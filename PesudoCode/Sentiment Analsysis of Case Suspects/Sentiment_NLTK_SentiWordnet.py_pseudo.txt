@@ -1,0 +1,138 @@
+# Import Python Libraries
+
+# Read DB connection parameters from file
+
+OUTPUT("Opening DB Connection...")
+
+# Fetch into pandas dataframe via a select statement
+
+SET #data TO pd.read_csv(SentiWordnet_labeledTrainData.tsv" header=0, delimiter="\t", quoting=3)
+
+OUTPUT("Fetch from TBL MasterDB.dbo.SentiWordnet_labeledTrainData_stanford completed")
+
+SET sentiment_data TO list(zip(df_sql_data["review"], df_sql_data["sentiment"]))
+
+
+OUTPUT("Split FOR training and testing ...")
+
+# SLICE 80% FOR training
+
+SET train_X, train_y TO list(zip(*sentiment_data[:20000]))
+
+# SLICE Keep 20% FOR testing
+
+SET test_X, test_y TO list(zip(*sentiment_data[20000:]))
+
+
+
+SET lemmatizer TO WordNetLemmatizer()
+
+
+
+DEFINE FUNCTION penn_to_wn(tag):
+   # Convert between the PennTreebank tags to simple Wordnet tags
+
+    IF tag.startswith('J'):
+
+        RETURN wn.ADJ
+
+    ELSEIF tag.startswith('N'):
+
+        RETURN wn.NOUN
+
+    ELSEIF tag.startswith('R'):
+
+        RETURN wn.ADV
+
+    ELSEIF tag.startswith('V'):
+
+        RETURN wn.VERB
+
+    RETURN None
+
+
+
+DEFINE FUNCTION clean_text(text):
+
+    SET text TO text.replace("<br />", " ")
+
+    SET #text TO text.decode("utf-8") // not required IN Python 3
+
+    RETURN text
+
+
+
+DEFINE FUNCTION swn_polarity(text):
+
+    # Return a sentiment polarity: 0 TO negative, 1 TO positive
+
+    SET sentiment TO 0.0
+
+    SET tokens_count TO 0
+
+    SET text TO clean_text(text)
+
+    SET raw_sentences TO sent_tokenize(text)
+
+    FOR raw_sentence IN raw_sentences:
+
+        SET tagged_sentence TO pos_tag(word_tokenize(raw_sentence))
+
+        FOR word, tag IN tagged_sentence:
+
+            SET wn_tag TO penn_to_wn(tag)
+
+            IF wn_tag not IN (wn.NOUN, wn.ADJ, wn.ADV):
+
+                continue
+
+            SET lemma TO lemmatizer.lemmatize(word, pos=wn_tag)
+
+            IF not lemma:
+
+                continue
+
+            SET synsets TO wn.synsets(lemma, pos=wn_tag)
+
+            IF not synsets:
+
+                continue
+
+
+            SET synset TO synsets[0] 
+
+            SET swn_synset TO swn.senti_synset(synset.name())
+
+            sentiment += swn_synset.pos_score() - swn_synset.neg_score()
+
+            tokens_count += 1
+
+
+     IF not tokens_count:
+
+        RETURN 0
+
+     IF sentiment >= 0:
+
+        RETURN 1
+
+    RETURN 0
+
+
+
+OUTPUT("Calculating model accuracy ...")
+
+SET pred_y TO [swn_polarity(text) FOR text IN test_X]
+
+accuracy=accuracy_score(test_y, pred_y)
+
+SET OUTPUT ("Model accuracy TO ", accuracy) # 0.664 using .tsv
+
+model_accuracy=round(accuracy*100)
+
+
+
+# Plot Graphs using matplotlib.pyplot
+# START OF DB TRANSACTIONS - RUN Model against case ESI TWitter, SMS/WHATSAPP, MSWord, Facebook and emails and store results in appropriate SQL tables)
+
+

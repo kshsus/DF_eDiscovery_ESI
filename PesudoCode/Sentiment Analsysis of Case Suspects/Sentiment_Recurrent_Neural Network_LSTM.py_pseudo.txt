@@ -1,0 +1,118 @@
+# Import Python Libraries
+
+
+OUTPUT("Program to ascertain sentiment using a LSTM (Long Short Term Memory network) which is a variant of RNN")
+
+OUTPUT("Reading DB connection parameters from file...")
+
+# Read DB connection parameters from file
+
+OUTPUT("Opening DB Connection...")
+
+# Fetch into pandas dataframe via a select statement
+
+SET df_sql_data TO pd.read_sql_query("SELECT [review], [sentiment] FROM [MasterDB].[dbo].[SentiWordnet_labeledTrainData_stanford]",conn)
+
+SET #data TO pd.read_csv(SentiWordnet_labeledTrainData.tsv, header=0, delimiter="\t", quoting=3)
+
+OUTPUT("Fetch from TBL MasterDB.dbo.SentiWordnet_labeledTrainData_stanford completed")
+
+SET maxlen TO 100
+
+SET TAG_RE TO re.compile(r'<[^>]+>')
+
+DEFINE FUNCTION remove_tags(text):
+        SET text TO text.replace("<br />", " ")
+        SET # text TO text.decode("utf-8") // not required IN Python 3
+        RETURN TAG_RE.sub('', text)
+
+DEFINE FUNCTION preprocess_text(sen):
+    SET sentence TO remove_tags(sen)
+    SET sentence TO re.sub('[^a-zA-Z]', ' ', sentence)
+    SET sentence TO re.sub(r"\s+[a-zA-Z]\s+", ' ', sentence)
+    SET sentence TO re.sub(r'\s+', ' ', sentence)
+    RETURN sentence
+
+SET X TO []
+
+SET sentences TO list(df_sql_data['review'].values)
+
+FOR sen IN sentences:
+
+    X.append(preprocess_text(sen))
+
+
+SET y TO df_sql_data['sentiment'].values
+
+SET X_train, X_test, y_train, y_test TO train_test_split(X, y, test_size=0.20, random_state=42) # NO Randomness.
+
+
+# Preparing the Embedding Layer
+
+SET tokenizer TO Tokenizer(num_words=5000)
+
+tokenizer.fit_on_texts(X_train)
+
+
+
+SET X_train TO tokenizer.texts_to_sequences(X_train)
+
+SET X_test TO tokenizer.texts_to_sequences(X_test)
+
+
+# Adding 1 because of reserved 0 index
+
+SET vocab_size TO len(tokenizer.word_index) + 1
+
+
+SET X_train TO pad_sequences(X_train, padding='post', maxlen=maxlen)
+
+SET X_test TO pad_sequences(X_test, padding='post', maxlen=maxlen)
+
+
+# We will use GloVe embeddings to create our feature matrix.
+
+SET embeddings_dictionary TO dict()
+
+SET glove_file TO open(glove_6B_100d.txt, encoding="utf8")
+
+
+
+FOR line IN glove_file:
+    SET records TO line.split()
+    SET word TO records[0]
+    SET vector_dimensions TO asarray(records[1:], dtype='float32')
+    SET embeddings_dictionary [word] TO vector_dimensions
+
+glove_file.close()
+
+
+
+# Create an embedding matrix with 100 columns where each column will contain the GloVe word embeddings FOR the words IN our corpus.
+
+SET embedding_matrix TO zeros((vocab_size, 100))
+
+FOR word, index IN tokenizer.word_index.items():
+    SET embedding_vector TO embeddings_dictionary.get(word)
+    IF embedding_vector is not None:
+        SET embedding_matrix[index] TO embedding_vector
+
+
+SET model TO Sequential()
+
+#  Create an LSTM layer with 128 neurons
+
+SET embedding_layer TO Embedding(vocab_size, 100, weights=[embedding_matrix], INPUT_length=maxlen , trainable=False)
+model.add(embedding_layer)
+model.add(LSTM(128))
+model.add(Dense(1, activation='sigmoid'))
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['acc'])
+OUTPUT(model.summary())
+
+SET history TO model.fit(X_train, y_train, batch_size=128, epochs=6, verbose=1, validation_split=0.2)
+
+
+# Evaluate the performance of the model.
+
+# Plot Graphs using matplotlib.pyplot
+# START OF DB TRANSACTIONS - RUN Model against case ESI TWitter, SMS/WHATSAPP, MSWord, Facebook and emails and store results in appropriate SQL tables)

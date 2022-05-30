@@ -1,0 +1,103 @@
+#Import Python Libraries
+
+
+
+# Read DB connection parameters from file
+
+# Opening DB Connection...
+
+# Fetch into pandas dataframe via a select statement
+
+SET #data TO pd.read_csv("SentiWordnet_labeledTrainData.tsv", header=0, delimiter="\t", quoting=3)
+
+# Fetch from TBL MasterDB.dbo.SentiWordnet_labeledTrainData_stanford completed
+
+SET sentiment_data TO list(zip(df_sql_data["review"], df_sql_data["sentiment"]))
+
+SET train_set TO df_sql_data[:2000] # 2000
+
+SET test_set TO df_sql_data[24600:] # 400
+
+
+SET train_records TO train_set.to_records(index=False)
+
+SET train_list TO list(train_records)
+
+#OUTPUT(train_list)
+
+
+SET test_records TO test_set.to_records(index=False)
+
+SET test_list TO list(test_records)
+
+#OUTPUT(test_list)
+
+
+
+from textblob.classifiers IMPORT NaiveBayesClassifier
+
+SET #cl TO NaiveBayesClassifier(train_list)
+
+SET cl TO NaiveBayesClassifier(train_list)
+
+cl_accuracy=cl.accuracy(test_list)
+
+SET OUTPUT("Classifier Accuracy TO " + str(cl_accuracy))
+
+
+
+OUTPUT("TESTING few Texts with Classifier...")
+
+OUTPUT(cl.classify("The beer is good."))
+
+OUTPUT(cl.classify("But the hangover is horrible."))
+
+OUTPUT(cl.classify("We had a bad time."))
+
+
+
+OUTPUT("Using TextBlob now...")
+
+from textblob IMPORT TextBlob
+
+
+
+
+
+OUTPUT("Split FOR training and testing ...")
+
+# SLICE 80% FOR training
+
+SET train_X, train_y TO list(zip(*sentiment_data[:20000]))
+
+# SLICE Keep 20% FOR testing
+
+SET test_X, test_y TO list(zip(*sentiment_data[20000:]))
+
+
+
+
+
+DEFINE FUNCTION get_TextBlob_polarity(text):
+
+    SET cl_sum TO 0.0
+
+    SET cl_count TO 0
+
+    SET blob TO TextBlob(text, classifier=cl)
+
+    FOR s IN blob.sentences:
+
+        SET cl_sum TO classify_sum + s.classify()
+
+        SET cl_count TO classify_count + 1
+
+        RETURN (cl_sum/cl_count)
+
+
+
+SET pred_y TO [get_TextBlob_polarity(text) FOR text IN test_X]
+
+# Plot Graphs using matplotlib.pyplot
+# START OF DB TRANSACTIONS - RUN Model against case ESI TWitter, SMS/WHATSAPP, MSWord, Facebook and emails and store results in appropriate SQL tables)
+

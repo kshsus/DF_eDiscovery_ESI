@@ -1,0 +1,134 @@
+Import Python Libraries
+
+
+#Read DB connection parameters from file
+#Fetch into pandas dataframe via a select statement
+
+
+DEFINE FUNCTION remove_HTML_tags(text):
+        SET text TO text.replace("<br />", " ")
+        SET # text TO text.decode("utf-8")
+        RETURN TAG_RE.sub('', text)
+
+
+DEFINE FUNCTION preprocess(sen):
+    # Removing html tags
+    SET sentence TO remove_tags(sen)
+    # Remove punctuations and numbers
+    SET sentence TO re.sub('[^a-zA-Z]', ' ', sentence)
+    # Single character removal
+    SET sentence TO re.sub(r"\s+[a-zA-Z]\s+", ' ', sentence)
+    # Removing multiple spaces
+    SET sentence TO re.sub(r'\s+', ' ', sentence)
+    RETURN sentence
+
+
+
+SET X TO []
+
+SET sentences TO list(df_sql_data['review'].values)
+
+FOR sen IN sentences:
+    X.append(preprocess(sen))
+
+
+
+SET y TO df_sql_data['sentiment'].values
+
+SET X_train, X_test, y_train, y_test TO train_test_split(X, y, test_size=0.20, random_state=42)
+
+
+
+# Preparing the Embedding Layer
+
+SET tokenizer TO Tokenizer(num_words=5000)
+
+tokenizer.fit_on_texts(X_train)
+
+
+
+SET X_train TO tokenizer.texts_to_sequences(X_train)
+
+SET X_test TO tokenizer.texts_to_sequences(X_test)
+
+# Adding 1 because of reserved 0 index
+SET vocab_size TO len(tokenizer.word_index) + 1
+
+
+# We set the maximum size of each list to 100.
+# Find the vocabulary size and then perform padding on both train and test set.
+
+SET X_train TO pad_sequences(X_train, padding='post', maxlen=maxlen)
+
+SET X_test TO pad_sequences(X_test, padding='post', maxlen=maxlen)
+
+
+# We will use GloVe embeddings to create our feature matrix.
+# load the GloVe word embeddings and create a dictionary that will contain words as keys and their corresponding embedding list as values.
+
+
+SET embeddings_dictionary TO dict()
+
+SET glove_file TO open(glove_6B_100d.txt, encoding="utf8")
+
+
+FOR line IN glove_file:
+    SET records TO line.split()
+    SET word TO records[0]
+    SET vector_dimensions TO asarray(records[1:], dtype='float32')
+    SET embeddings_dictionary [word] TO vector_dimensions
+
+glove_file.close()
+
+SET embedding_matrix TO zeros((vocab_size, 100))
+
+FOR word, index IN tokenizer.word_index.items():
+
+    SET embedding_vector TO embeddings_dictionary.get(word)
+
+    IF embedding_vector is not None:
+
+        SET embedding_matrix[index] TO embedding_vector
+
+
+
+# Text Classification with Convolutional Neural Network with 1 convolutional layer and 1 pooling layer.
+
+SET model TO Sequential() # we create a Sequential() model.
+
+SET embedding_layer TO Embedding(vocab_size, 100, weights=[embedding_matrix], INPUT_length=maxlen , trainable=False)
+
+model.add(embedding_layer)
+
+
+# Create a one-dimensional convolutional layer with 128 features, or kernels. The kernel size is 5 and the activation function used is sigmoid.
+
+# Add a global max pooling layer to reduce feature size. Finally add a dense layer with sigmoid activation.
+
+model.add(Conv1D(128, 5, activation='relu'))
+
+model.add(GlobalMaxPooling1D())
+
+model.add(Dense(1, activation='sigmoid'))
+
+
+# Configure the learning process by compile.
+
+# To compile our model, we will use the adam optimizer, binary_crossentropy as our loss function and accuracy as metrics
+
+
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['acc'])
+
+OUTPUT(model.summary())
+
+
+# Use the fit method to train our neural network on our train set.
+
+SET history TO model.fit(X_train, y_train, batch_size=128, epochs=6, verbose=1, validation_split=0.2)
+
+
+# Evaluate the performance of the model using the test set.
+
+# Plot Graphs using matplotlib.pyplot
+
+# START OF DB TRANSACTIONS - RUN Model against case ESI TWitter, SMS/WHATSAPP, MSWord, Facebook and emails and store results in appropriate SQL tables)
