@@ -1,0 +1,155 @@
+IMPORT io
+
+from nltk.corpus IMPORT wordnet # using wordnet. Download using python interpreter of venv >>>nltk.download()
+
+IMPORT pyodbc
+
+IMPORT pandas as pd
+
+from datetime IMPORT datetime
+
+from nltk IMPORT pos_tag
+
+from nltk IMPORT RegexpParser
+
+from nltk IMPORT word_tokenize, pos_tag
+
+
+
+SET t TO str(datetime.today().year) + str(datetime.today().month)+ str(datetime.today().day)+"_"+str(datetime.today().hour)+"_"+str(datetime.today().minute)+"_"+str(datetime.today().second)
+
+OUTPUT(t)
+
+OUTPUT("Program to ascertain sentiments expressed using LoughranMcDonald_MasterDictionary_2020.csv")
+
+
+
+#=====================================
+
+OUTPUT("Reading DB connection parameters from file...")
+
+OUTPUT("Opening DB Connection...")
+
+
+OUTPUT("=========== START OF DB TRANSACTIONS ======================================")
+
+OUTPUT("Now let's run the case ESI texts FOR the stock ticker and actor/suspect through this model")
+
+OUTPUT("Backup tables before fresh insert")
+
+
+OUTPUT("Now Starting Sentiment analysis....")
+
+#OUTPUT(pos_tag(word_tokenize(txt)))
+
+SET # tagged_comment TO pos_tag(word_tokenize(txt))
+
+# #OUTPUT( [(word, tag) FOR word, tag IN tagged_comment IF (tag=='NNP')]) #shorter approach to below FOR loop
+
+# FOR word, tag IN tagged_comment:
+
+# IF (tag EQUALS 'VBP') or (tag EQUALS 'VBG') or (tag EQUALS 'JJ') or (tag EQUALS 'VBZ') or (tag EQUALS 'JJR') or (tag EQUALS 'JJS') or (
+
+        #tag EQUALS 'VBP') or (tag EQUALS 'VBD') or (tag EQUALS 'VB'):
+
+        # OUTPUT(word, tag)
+
+SET df_sql_data TO pd.read_sql_query("SELECT [Fin_Texts_4_Snips_ID],[BatesID],[Txt] FROM [eDisc_DB_01].[dbo].[Fin_Texts_4_SnipsIntent_Senti_Pattern]",conn)
+
+FOR row IN df_sql_data.itertuples(index=True, name='Pandas'):
+
+    # Extracting all Verbs & adjective  from a text file using nltk
+
+    # JJ 	adjective or numeral, ordinal 	battery-powered, pre-war, multi-disciplinary etc.
+
+    # JJR 	adjective, comparative 	braver, cleaner, brighter etc.
+
+    # JJS 	adjective, superlative 	cheapest, closest, darkest etc.
+
+    # VB 	verb, base form 	ask, assemble, assign etc.
+
+    # VBD 	verb, past tense 	dipped, halted, registered etc.
+
+    # VBG 	verb, present participle or gerund 	telegraphing, judging, erasing etc.
+
+    # VBN 	verb, past participle 	used, unsettled, dubbed etc.
+
+    # VBP 	verb, present tense, not 3rd person singular 	glisten, obtain, comprise etc.
+
+    # VBZ 	verb, present tense, 3rd person singular 	marks, mixes, seals etc.
+
+    SET tagged_comment TO pos_tag(word_tokenize(str(row[3])))
+
+    FOR word, tag IN tagged_comment:
+
+        IF (tag EQUALS 'VBP') or (tag EQUALS 'VBG') or (tag EQUALS 'JJ') or (tag EQUALS 'VBZ') or (tag EQUALS 'JJR') or (tag EQUALS 'JJS') or (tag EQUALS 'VBP') or (tag EQUALS 'VBD') or (tag EQUALS 'VB'):
+
+            word=word.replace('"', '').replace("'","")
+
+
+
+            # OUTPUT(word, tag)
+
+            SET #syns TO wordnet.synsets(word) # get synonyms of words verbs and adjectives
+
+            #OUTPUT(syns[0].lemmas()[0].name())  #synonyms of the word
+
+
+
+            # Now Lookup these words from LoughranMcDonald_MasterDictionary_2020")
+
+            # Fetch into pandas dataframe via a select statement
+
+            SET df_sql_masterdata TO pd.read_sql_query("SELECT [Word],[Negative],[Positive],[Uncertainty],[Litigious] FROM [MasterDB].[dbo].[LoughranMcDonald_MasterDictionary_2020] where "
+
+                                            "[word] like '" + word +"'",     conn)
+
+            OUTPUT("SELECT [Word],[Negative],[Positive],[Uncertainty],[Litigious] FROM [MasterDB].[dbo].[LoughranMcDonald_MasterDictionary_2020] where [word] like '" + word +"'")
+
+
+
+            # iterating over rows from query
+
+            FOR row_master IN df_sql_masterdata.itertuples(index=True, name='Pandas'):
+
+                IF int(row_master[2]) > 0: #negative
+
+                    SET sql TO "INSERT INTO ..
+
+                    cursor.execute(sql, (row[1], row[2], -1, word ))
+
+                    conn.commit()
+
+                    OUTPUT("Row inserted successfully")
+
+                IF int(row_master[3]) >0: #positive
+
+                    SET sql TO "INSERT INTO ..
+
+                    cursor.execute(sql, (row[1], row[2], 1, word ))
+
+                    conn.commit()
+
+                    OUTPUT("Row inserted successfully")
+
+                IF int(row_master[4]) >0: #uncertainity
+
+                    SET sql TO "INSERT INTO ..
+
+                    cursor.execute(sql, (row[1], row[2], 0, word ))
+
+                    conn.commit()
+
+                    OUTPUT("Row inserted successfully")
+
+                IF int(row_master[5]) >0: #Litigious
+
+                    SET sql TO "INSERT INTO ..
+                    cursor.execute(sql, (row[1], row[2], 2, word ))
+
+                    conn.commit()
+
+                    OUTPUT("Row inserted successfully")
+
+
+

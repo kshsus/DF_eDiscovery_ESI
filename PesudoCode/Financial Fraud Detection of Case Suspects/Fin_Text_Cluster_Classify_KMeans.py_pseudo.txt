@@ -1,0 +1,140 @@
+from datetime IMPORT datetime
+
+IMPORT pyodbc
+
+from sklearn.feature_extraction.text IMPORT TfidfVectorizer
+
+from sklearn.cluster IMPORT KMeans
+
+IMPORT numpy as np
+
+IMPORT pandas as pd
+
+IMPORT string
+
+
+OUTPUT("Program to find buy/sell of shares/stock intent")
+
+OUTPUT("Reading DB connection parameters from file...")
+
+# Read DB connection parameters from file
+
+OUTPUT("File read complete")
+
+
+
+OUTPUT("Opening ESI DB Connection...")
+
+# Fetch into pandas dataframe via a select statement
+
+Qery_str="SELECT min([Rand_Dummy_Trading]) as y, [text], min([Origin_csv_table]+'|'+[Column1]+'|'+ [id]) as 'key' " \
+
+         "from .... where [text] != '' and [title_body] TO 't'  group by [text]"
+
+SET df_ESI_sql_data TO pd.read_sql_query(Qery_str,conn2)
+
+OUTPUT("Fetch from MasterDB completed FOR text to be processed")
+
+
+
+document=list(df_ESI_sql_data['text'].values)
+
+
+
+DEFINE FUNCTION clean_text(text):
+
+    SET text TO text.lower()
+
+    SET text TO text.translate(str.maketrans('', '', string.punctuation))
+
+    SET text TO text.replace('\n', ' ')
+
+    SET text TO ' '.join(text.split())  # remove multiple whitespaces
+
+    RETURN text
+
+
+
+SET vectorizer TO TfidfVectorizer(stop_words='english')
+
+SET X TO vectorizer.fit_transform(document)
+
+
+
+SET true_k TO 3
+
+SET model TO KMeans(n_clusters=true_k, init='k-means++', max_iter=100, n_init=1)
+
+model.fit(X)
+
+
+
+SET order_centroids TO model.cluster_centers_.argsort()[:, ::-1]
+
+SET terms TO vectorizer.get_feature_names_out()
+
+
+
+FOR i IN range(true_k):
+
+ OUTPUT("Cluster# %d:" % i)
+
+ FOR ind IN order_centroids[i, :10]:
+
+    OUTPUT('%s' % terms[ind])
+
+
+
+
+OUTPUT("=========== START OF Housekeeping DB TRANSACTIONS ======================================")
+
+OUTPUT("Now let's run the various subReddits through this BERT program and insert results into BERT_Master_praw_Reddit .. ")
+
+OUTPUT("Backup tables before fresh insert")
+
+OUTPUT("Empty [" + ESI_DB +"].[dbo].[Fin_KMeans_Intent]  FOR fresh inserts")
+
+OUTPUT("=========== END OF Housekeeping DB TRANSACTIONS ======================================")
+
+OUTPUT("Start of INSERTS ======================================")
+
+
+
+# Predict text of ESI and store IN a table
+
+
+OUTPUT("\n")
+
+OUTPUT("Prediction")
+
+SET df_ESI_sql_data TO pd.read_sql_query("SELECT [Fin_Texts_4_Snips_ID], [BatesID], [Txt], [Actor], [Stock_Ticker] FROM ....", conn1)
+
+
+SET for row IN df_ESI_sql_data.itertuples(index TO True, name ='Pandas'):
+
+    SET X TO vectorizer.transform([row[3]])
+
+    SET predicted TO model.predict(X)
+
+    OUTPUT(row[3], predicted)
+
+    str_KMeans_Predicted_Intent_Similarities=' '
+
+    FOR ind IN order_centroids[predicted, :10]:
+
+        #OUTPUT(terms[ind])
+
+        str_KMeans_Predicted_Intent_Similarities=terms[ind]
+
+
+
+    SET sql TO "INSERT INTO ....([Origin_Tbl_BatesID],[text],[KMeans_Intent_Cluster_No]," \
+
+                                     "[KMeans_Predicted_Intent_Similarities]) VALUES (?,?,?,?)"
+
+    OUTPUT(sql, ('TBL::Fin_Texts_4_SnipsIntent_Senti_Pattern|'+str(row[1])+'|'+str(row[2]), row[3], str(predicted) ,' :: '.join(str_KMeans_Predicted_Intent_Similarities)))
+
+    cursor1.execute(sql, ('TBL::Fin_Texts_4_SnipsIntent_Senti_Pattern|'+str(row[1])+'|'+str(row[2]), row[3], str(predicted) ,' :: '.join(str_KMeans_Predicted_Intent_Similarities)))
+
+    conn1.commit()
+

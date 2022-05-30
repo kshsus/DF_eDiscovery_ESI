@@ -1,0 +1,323 @@
+
+from datetime IMPORT datetime
+
+IMPORT pyodbc
+
+from sklearn.feature_extraction.text IMPORT TfidfVectorizer
+
+
+IMPORT json
+
+IMPORT pandas as pd
+
+IMPORT numpy as np
+
+from sklearn IMPORT feature_selection
+
+from sklearn IMPORT metrics
+
+IMPORT matplotlib.pyplot as plt
+
+IMPORT seaborn as sns
+
+IMPORT re
+
+IMPORT nltk
+
+## FOR bag-of-words
+
+from sklearn IMPORT feature_extraction, model_selection, naive_bayes, pipeline, manifold, preprocessing
+
+
+## FOR word embedding
+
+IMPORT gensim
+
+IMPORT gensim.downloader as gensim_api
+
+
+
+OUTPUT("Program to find buy/sell of shares/stock intent")
+
+OUTPUT("Reading DB connection parameters from file...")
+
+OUTPUT("Opening ESI and Master DB Connection...")
+
+
+
+# Fetch into pandas dataframe via a select statement
+
+SET Qery_str TO "SELECT [text] ,[BERT_Intent] as y FROM [MasterDB].[dbo].[BERT_Master_praw_Reddit]"
+
+SET df_ESI_sql_data TO pd.read_sql_query(Qery_str,conn2)
+
+OUTPUT("Fetch from MasterDB completed FOR text to be processed")
+
+
+
+:parameter
+
+    :param text: string - name of column containing text
+
+    :param lst_stopwords: list - list of stopwords to remove
+
+    :param flg_stemm: bool - whether stemming is to be applied
+
+    :param flg_lemm: bool - whether lemmitisation is to be applied
+
+:RETURN
+
+    cleaned text
+
+'''
+
+
+
+
+
+DEFINE FUNCTION utils_preprocess_text(text, flg_stemm=False, flg_lemm=True, lst_stopwords=None):
+
+    ## clean (convert to lowercase and remove punctuations and  characters and then strip)
+
+    SET text TO re.sub(r'[^\w\s]', '', str(text).lower().strip())
+
+
+
+    ## Tokenize (convert from string to list)
+
+    SET lst_text TO text.split()
+
+
+
+    ## remove Stopwords
+
+    IF lst_stopwords is not None:
+
+        SET lst_text TO [word FOR word IN lst_text IF word not IN lst_stopwords]
+
+
+
+    ## Stemming (remove -ing, -ly, ...)
+
+    IF flg_stemm EQUALS True:
+
+        SET ps TO nltk.stem.porter.PorterStemmer()
+
+        SET lst_text TO [ps.stem(word) FOR word IN lst_text]
+
+
+
+    ## Lemmatisation (convert the word into root word)
+
+    IF flg_lemm EQUALS True:
+
+        SET lem TO nltk.stem.wordnet.WordNetLemmatizer()
+
+        SET lst_text TO [lem.lemmatize(word) FOR word IN lst_text]
+
+
+
+    ## back to string from list
+
+    SET text TO " ".join(lst_text)
+
+    RETURN text
+
+
+
+SET lst_stopwords TO nltk.corpus.stopwords.words("english")
+
+OUTPUT(lst_stopwords)
+
+
+
+SET df_ESI_sql_data["text_clean"] TO df_ESI_sql_data["text"].apply(lambda x:
+
+          utils_preprocess_text(x, flg_stemm=False, flg_lemm=True,
+
+          lst_stopwords=lst_stopwords))
+
+OUTPUT(df_ESI_sql_data.head())
+
+
+
+## split dataset
+
+SET dtf_train, dtf_test TO model_selection.train_test_split(df_ESI_sql_data, test_size=0.3)
+
+
+
+## get target
+
+SET y_train TO dtf_train["y"].values
+
+SET y_test TO dtf_test["y"].values
+
+
+
+## Count (classic BoW)
+
+SET vectorizer TO feature_extraction.text.CountVectorizer(max_features=10000, ngram_range=(1,2))
+
+
+
+## Tf-Idf (advanced variant of BoW)
+
+SET #vectorizer TO feature_extraction.text.TfidfVectorizer(max_features=10000, ngram_range=(1,2))
+
+
+
+SET corpus TO dtf_train["text_clean"]
+
+vectorizer.fit(corpus)
+
+SET X_train TO vectorizer.transform(corpus)
+
+SET dic_vocabulary TO vectorizer.vocabulary_
+
+# To Overcome TypeError: Cannot interpret '<attribute 'dtype' of 'numpy.generic' objects>' as a data type
+
+# There is a unfortuate incompatibility with old pandas and 1.20. Updating pandas to a newer version should fix it,
+
+# Updating to pandas>=1.0.5 should solve it. Supposedly also pandas==0.25.3 works.
+
+# If you are stuck with pandas 0.24.x you may not be able to usse numpy 1.20.x though, unfortunaly. In that case, use numpy<1.20,
+
+# Pandas also provides a utility function, pd.show_versions(), which reports the version of its dependencies as well:
+
+# pip3 install --upgrade pandas or conda update pandas
+
+
+
+
+
+SET y TO dtf_train["y"]
+
+SET X_names TO vectorizer.get_feature_names_out()
+
+SET p_value_limit TO 0.95
+
+SET dtf_features TO pd.DataFrame()
+
+
+
+FOR cat IN np.unique(y):
+
+    SET chi2, p TO feature_selection.chi2(X_train, y==cat)
+
+    SET dtf_features TO dtf_features.append(pd.DataFrame(
+
+                   {"feature":X_names, "score":1-p, "y":cat}))
+
+    SET dtf_features TO dtf_features.sort_values(["y","score"], ascending=[True,False])
+
+    SET dtf_features TO dtf_features[dtf_features["score"] > p_value_limit]
+
+
+
+SET X_names TO dtf_features["feature"].unique().tolist()
+
+SET OUTPUT('X_names TO ',X_names)
+
+
+
+SET vectorizer TO feature_extraction.text.TfidfVectorizer(vocabulary=X_names)
+
+vectorizer.fit(corpus)
+
+SET X_train TO vectorizer.transform(corpus)
+
+SET dic_vocabulary TO vectorizer.vocabulary_
+
+
+
+SET classifier TO naive_bayes.MultinomialNB()
+
+
+
+## pipeline
+
+SET model TO pipeline.Pipeline([("vectorizer", vectorizer),
+
+                           ("classifier", classifier)])## train classifier
+
+model["classifier"].fit(X_train, y_train)## test
+
+SET X_test TO dtf_test["text_clean"].values
+
+SET predicted TO model.predict(X_test)
+
+SET predicted_prob TO model.predict_proba(X_test)
+
+
+
+SET classes TO np.unique(y_test)
+
+SET y_test_array TO pd.get_dummies(y_test, drop_first=False).values
+
+
+
+
+
+## Accuracy, Precision, Recall
+
+SET accuracy TO metrics.accuracy_score(y_test, predicted)
+
+SET auc TO metrics.roc_auc_score(y_test, predicted_prob,
+
+                            multi_class="ovr")
+
+OUTPUT("Accuracy:", round(accuracy, 2))
+
+OUTPUT("Auc:", round(auc, 2))
+
+OUTPUT("Detail:")
+
+OUTPUT(metrics.classification_report(y_test, predicted))
+
+
+
+## Plot confusion matrix
+
+## Plot roc
+
+## Plot precision-recall curve
+
+
+OUTPUT("=========== START OF Housekeeping DB TRANSACTIONS ======================================")
+
+OUTPUT("Now let's run the case ESI through this classification/perdiction program using supervised learning (courtesy BERT) and insert results into Fin_BOW_Intent .. ")
+
+OUTPUT("Backup tables before fresh insert")
+
+OUTPUT("=========== END OF Housekeeping DB TRANSACTIONS ======================================")
+
+# Predict text of ESI and store IN a table
+
+OUTPUT("\n")
+
+OUTPUT("Prediction")
+
+SET df_ESI_sql_data TO pd.read_sql_query("SELECT [Fin_Texts_4_Snips_ID], [BatesID], [Txt], [Actor], [Stock_Ticker] FROM [" + ESI_DB +"].[dbo].[Fin_Texts_4_SnipsIntent_Senti_Pattern]", conn1)
+
+
+SET for row IN df_ESI_sql_data.itertuples(index TO True, name ='Pandas'):
+
+    SET pred_class  TO model.predict([row[3]]) # which one??? Buy, Other, Sell
+
+    SET predicted_prob TO model.predict_proba([row[3]]) # IN the order of Buy, Other, Sell
+
+    OUTPUT(row[3], pred_class , predicted_prob)
+
+    SET pred_class TO ' :: '.join(str(v) FOR v IN pred_class)
+
+    SET predicted_classes_prob TO ' :: '.join(str(v) FOR v IN predicted_prob) # IN the order of Buy, Other, Sell
+
+    SET sql TO "INSERT ....[BOW_Predicted_Intent_Similarities], [Model_Accuracy]) VALUES (?,?,?,?,?)"
+
+    OUTPUT(sql, ('TBL::Fin_Texts_4_SnipsIntent_Senti_Pattern|'+str(row[1])+'|'+str(row[2]), row[3], pred_class ,predicted_classes_prob, round(accuracy, 2)))
+
+    cursor1.execute(sql, ('TBL::Fin_Texts_4_SnipsIntent_Senti_Pattern|'+str(row[1])+'~'+str(row[2]), row[3], pred_class ,predicted_classes_prob, round(accuracy, 2)))
+
+    conn1.commit()
+

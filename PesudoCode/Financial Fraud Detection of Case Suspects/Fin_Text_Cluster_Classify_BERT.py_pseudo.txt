@@ -1,0 +1,346 @@
+# https://towardsdatascience.com/text-classification-with-no-model-training-935fe0e42180?gi=49f752f550b7
+# Use BERT, Word Embedding, and Vector Similarity when you don’t have a labeled training set
+
+
+IMPORT json
+
+IMPORT pandas as pd
+
+IMPORT numpy as np
+
+from sklearn IMPORT metrics, manifold
+
+IMPORT re
+
+IMPORT nltk
+
+IMPORT matplotlib.pyplot as plt
+
+IMPORT seaborn as sns
+
+IMPORT gensim
+
+IMPORT gensim.downloader as gensim_api## FOR bert
+
+IMPORT transformers
+
+from datetime IMPORT datetime
+
+IMPORT warnings
+
+IMPORT pyodbc
+
+OUTPUT("Program to find buy/sell of shares/stock intent")
+
+OUTPUT("Reading DB connection parameters from file...")
+
+# Read DB connection parameters from file
+
+OUTPUT("Opening ESI amd MASTER DB Connection...")
+
+OUTPUT("DB Connection successfully opened")
+
+# Fetch into pandas dataframe via a select statement
+
+SET #df_ESI_sql_data TO pd.read_sql_query("SELECT [Fin_Texts_4_Snips_ID], [BatesID], [Txt], [Actor], [Stock_Ticker] FROM [" + ESI_DB +"].[dbo].[Fin_Texts_4_SnipsIntent_Senti_Pattern]", conn1)
+
+# Qery_str="SELECT [subreddit] as y, [title] as text FROM [MasterDB].[dbo].[Test_praw_Investing_2021_11_14_13_36] " \
+
+#          "union select [subreddit] , [title] from [MasterDB].[dbo].[Test_praw_Investing_2021_11_06_07_59] " \
+
+#          "union select [subreddit] , [title] from [MasterDB].[dbo].[Test_praw_Investing_2021_11_13_06_08]"
+
+SET Qery_str="SELECT min([Rand_Dummy_Trading]) as y, [text], min([Origin_csv_table]+'|'+[Column1]+'|'+ [id]) as 'key' from [MasterDB].[dbo].[Master_praw_Reddit] where [text] != '' and [title_body] TO 't'  group by [text]"
+
+
+
+SET df_ESI_sql_data TO pd.read_sql_query(Qery_str,conn1)
+
+OUTPUT("Fetch from MasterDB completed FOR text to be processed")
+
+
+
+'''
+
+Preprocess a string.
+
+:parameter
+
+    :param text: string - name of column containing text
+
+    :param lst_stopwords: list - list of stopwords to remove
+
+    :param flg_stemm: bool - whether stemming is to be applied
+
+    :param flg_lemm: bool - whether lemmitisation is to be applied
+
+:RETURN
+
+    cleaned text
+
+'''
+
+
+
+DEFINE FUNCTION utils_preprocess_text(text, flg_stemm=False, flg_lemm=True, lst_stopwords=None):
+
+    ## clean (convert to lowercase and remove punctuations and characters and then strip)
+
+    SET text TO re.sub(r'[^\w\s]', '', str(text).lower().strip())
+
+
+
+    ## Tokenize (convert from string to list)
+
+    SET lst_text TO text.split()        ## remove Stopwords
+
+    IF lst_stopwords is not None:
+
+        SET lst_text TO [word FOR word IN lst_text IF word not IN
+
+                    lst_stopwords]
+
+
+
+    ## Stemming (remove -ing, -ly, ...)
+
+    IF flg_stemm EQUALS True:
+
+        SET ps TO nltk.stem.porter.PorterStemmer()
+
+        SET lst_text TO [ps.stem(word) FOR word IN lst_text]
+
+
+
+    ## Lemmatisation (convert the word into root word)
+
+    IF flg_lemm EQUALS True:
+
+        SET lem TO nltk.stem.wordnet.WordNetLemmatizer()
+
+        SET lst_text TO [lem.lemmatize(word) FOR word IN lst_text]
+
+
+
+    ## back to string from list
+
+    SET text TO " ".join(lst_text)
+
+    RETURN text
+
+
+
+## OUTPUT 5 random rows
+
+OUTPUT(df_ESI_sql_data.sample(5))
+
+
+
+SET lst_stopwords TO nltk.corpus.stopwords.words("english")
+
+
+
+SET df_ESI_sql_data["text_clean"] TO df_ESI_sql_data["text"].apply(lambda x:
+
+          utils_preprocess_text(x, flg_stemm=False, flg_lemm=True,
+
+          lst_stopwords=lst_stopwords))
+
+OUTPUT(df_ESI_sql_data.head())
+
+
+
+SET nlp TO gensim_api.load("glove-wiki-gigaword-300")
+
+
+
+SET OUTPUT('Top 3 nlp.most_similar(["buy"] TO ', nlp.most_similar(["buy"], topn=3))
+
+SET OUTPUT('Top 3 nlp.most_similar(["sell"] TO ', nlp.most_similar(["sell"], topn=3))
+
+
+
+## Function to apply
+
+DEFINE FUNCTION get_similar_words(lst_words, top, nlp):
+
+    SET lst_out TO lst_words
+
+    FOR tupla IN nlp.most_similar(lst_words, topn=top):
+
+        lst_out.append(tupla[0])
+
+    RETURN list(set(lst_out))
+
+
+
+## Create Dictionary {category:[keywords]}
+
+OUTPUT('Create Dictionary clusters FOR keywords Buy, Sell, Other ..')
+
+SET dic_clusters TO {}
+
+SET dic_clusters["BUY"] TO get_similar_words(['buy','purchase','acquire','invest','add'], top=30, nlp=nlp)
+
+SET dic_clusters["Sell"] TO get_similar_words(['sell','dispose','dump','unload','divest'], top=30, nlp=nlp)
+
+SET dic_clusters["Other"] TO get_similar_words(['amazon','android','app','apple','facebook', 'google','tech'], top=30, nlp=nlp)
+
+
+
+
+
+## OUTPUT some
+
+FOR key, vector IN dic_clusters.items():
+
+    OUTPUT(key, " : ", vector[0:5], "...", len(vector))
+
+
+
+
+
+SET tokenizer TO transformers.BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
+
+SET nlp TO transformers.TFBertModel.from_pretrained('bert-base-uncased')
+
+
+
+## function to apply
+
+DEFINE FUNCTION utils_bert_embedding(txt, tokenizer, nlp):
+
+    SET idx TO tokenizer.encode(txt)
+
+    SET idx TO np.array(idx)[None,:]
+
+    SET embedding TO nlp(idx)
+
+    SET X1 TO np.array(embedding[0][0][1:-1])
+
+    RETURN X1
+
+
+
+OUTPUT("create list of news vector..")
+
+## create list of news vector
+
+SET lst_mean_vecs TO [utils_bert_embedding(txt, tokenizer, nlp).mean(0)
+
+                 FOR txt IN df_ESI_sql_data["text_clean"]]
+
+
+
+
+
+OUTPUT("create the feature matrix (n news x 768)")
+
+## create the feature matrix (n news x 768)
+
+SET X TO np.array(lst_mean_vecs)
+
+
+
+SET dic_y TO {keys: utils_bert_embedding(value, tokenizer, nlp).mean(0) FOR keys, value IN dic_clusters.items()}
+
+
+
+#--- Model Algorithm ---
+
+OUTPUT("Model Algorithm")
+
+
+
+### compute cosine similarities
+
+#.T is to transpose
+
+OUTPUT("compute cosine similarities")
+
+SET similarities TO np.array(
+
+            [metrics.pairwise.cosine_similarity(X, y.reshape(1, -1)).T.tolist()[0]
+
+             FOR y IN dic_y.values()]
+
+            ).T
+
+
+
+## adjust and rescale
+
+OUTPUT('adjust and rescale..')
+
+SET labels TO list(dic_y.keys())
+
+FOR i IN range(len(similarities)):
+
+    ### assign randomly IF there is no similarity
+
+    IF sum(similarities[i]) EQUALS 0:
+
+       SET similarities[i] TO [0]*len(labels)
+
+       SET similarities[i][np.random.choice(range(len(labels)))] TO 1
+
+    SET ### rescale so they sum TO 1
+
+    SET similarities[i] TO similarities[i] / sum(similarities[i])
+
+
+
+## classify the label with highest similarity score
+
+OUTPUT('classify the label with highest similarity score')
+
+SET predicted_prob TO similarities
+
+SET predicted TO [labels[np.argmax(pred)] FOR pred IN predicted_prob]
+
+
+
+
+
+SET y_test TO df_ESI_sql_data["y"].values
+
+SET classes TO np.unique(y_test)
+
+SET y_test_array TO pd.get_dummies(y_test, drop_first=False).values
+
+
+
+OUTPUT("=========== Housekeeping DB TRANSACTIONS ======================================")
+
+OUTPUT("Start of INSERTS ======================================")
+
+FOR i IN range(len(df_ESI_sql_data)):
+
+  OUTPUT('Row - ', df_ESI_sql_data.iloc[i, 0], df_ESI_sql_data.iloc[i, 1],df_ESI_sql_data.iloc[i, 2],df_ESI_sql_data.iloc[i, 3],'== ', predicted[i], round(np.max(predicted_prob[i]),2))
+
+  SET sql TO "INSERT INTO ..
+
+  cursor2.execute(sql, (df_ESI_sql_data.iloc[i, 2], df_ESI_sql_data.iloc[i, 1], predicted[i],round(np.max(predicted_prob[i]),2)))
+
+  conn2.commit()
+
+
+
+
+## Accuracy, Precision, Recall
+
+OUTPUT('WE DO NOT NEED BELOW AS y_test is all random and not accurate IN the first place....')
+
+OUTPUT('Accuracy, Precision, Recall ...')
+
+SET accuracy TO metrics.accuracy_score(y_test, predicted)
+
+SET auc TO metrics.roc_auc_score(y_test, predicted_prob, multi_class="ovr")
+
+OUTPUT("Accuracy:",  round(accuracy,2))
+
+OUTPUT("Auc:", round(auc,2))
+
+OUTPUT("Detail:")
+
+OUTPUT(metrics.classification_report(y_test, predicted))

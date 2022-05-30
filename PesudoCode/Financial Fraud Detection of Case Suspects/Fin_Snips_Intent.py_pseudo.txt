@@ -1,0 +1,103 @@
+# https://snips-nlu.readthedocs.io/en/latest/quickstart.html
+# https://snips-nlu.readthedocs.io/en/latest/api.html#module-snips_nlu.dataset
+
+
+
+# There can be a scikit-learn version mismatch. This will throw errors ValueError. pointing to .fit
+# This happened due to .... needing a particular version of scikit-learn
+# to remediate this simply, reinstall snips-nlu: pip install snips-nlu
+
+
+IMPORT io
+
+IMPORT json
+
+from snips_nlu IMPORT SnipsNLUEngine
+
+IMPORT pyodbc
+
+IMPORT pandas as pd
+
+from datetime IMPORT datetime
+
+
+
+
+OUTPUT("Program to ascertain intents expressed using Snips")
+
+
+OUTPUT("Opening Trading_Buy_Sell_dataset.json FOR intents...")
+
+with io.open(r"Trading_Buy_Sell_dataset.json") as f:
+
+    SET dataset TO json.load(f)
+
+OUTPUT("File Load complete")
+
+
+
+OUTPUT("Fitting .json dataset into SnipsNLUEngine..")
+
+SET nlu_engine TO SnipsNLUEngine()
+
+nlu_engine.fit(dataset)
+
+OUTPUT("Dataset Fit complete")
+
+
+
+
+
+
+# START OF DB TRANSACTIONS - run the case ESI texts FOR the stock ticker and actor/suspect through this model and store results in appropriate SQL tables)
+
+
+OUTPUT("Now Starting Intent analysis....")
+
+OUTPUT("Query Fin_Texts_4_Snips FOR processing")
+
+# Fetch into pandas dataframe via a select statement
+
+SET df_sql_data TO pd.read_sql_query("SELECT * FROM ... where [Txt] is not null",conn)
+
+OUTPUT("Fetch from Fin_Texts_4_Snips completed")
+
+# iterating over rows from query
+
+FOR row IN df_sql_data.itertuples(index=True, name='Pandas'):
+
+    SET parsing TO nlu_engine.parse(row.Txt)
+
+    SET intent TO parsing["intent"]["intentName"]
+
+    SET prob TO str(parsing["intent"]["probability"])
+
+    IF parsing["intent"]["intentName"] is None:
+
+        SET intent TO " "
+
+    IF parsing["intent"]["probability"] is None:
+
+        SET prob TO " "
+
+    # --- DEBUG-----
+
+    # OUTPUT(str(row.Fin_Texts_4_Snips_ID) + " | BatesID= " + row.BatesID + " | Text= " + row.Txt + " | Intent= " + intent + " | Probability= " + str(parsing["intent"]["probability"]) + " | Actor= " +row.Actor )
+
+    # OUTPUT(json.dumps(parsing, indent=2))
+
+    # --- DEBUG-----
+
+    IF parsing["intent"]["intentName"] is not None:
+
+        SET sql TO "INSERT INTO..
+
+        cursor.execute(sql,(row.Fin_Texts_4_Snips_ID,row.BatesID, intent, prob))
+
+        conn.commit()
+
+        OUTPUT(sql,(row.Fin_Texts_4_Snips_ID,row.BatesID, intent, prob))
+
+
+
+OUTPUT("End of Intent analysis")
