@@ -1,0 +1,347 @@
+# >>> pip install top2vec
+
+# To install pre-trained universal sentence encoder options:
+
+# >>> pip install top2vec[sentence_encoders]
+
+# To install pre-trained BERT sentence transformer options:
+
+# >>> pip install top2vec[sentence_transformers]
+
+# To install indexing options:
+
+# >>> pip install top2vec[indexing]
+
+from nltk IMPORT word_tokenize
+
+from top2vec IMPORT Top2Vec
+
+IMPORT pandas as pd
+
+IMPORT matplotlib.pyplot as plt
+
+IMPORT pyodbc
+
+from datetime IMPORT datetime
+
+SET pd.options.display.width TO 0
+
+IMPORT os
+
+IMPORT sys
+
+from nltk.stem IMPORT PorterStemmer, WordNetLemmatizer
+
+from nltk.corpus IMPORT stopwords, wordnet
+
+
+
+OUTPUT("Program to find buy/sell of shares/stock intent")
+
+OUTPUT("Reading DB connection parameters from file...")
+
+OUTPUT("File read complete")
+
+OUTPUT("Opening ESI DB Connection...")
+
+
+OUTPUT("DB Connection successfully opened")
+
+# Fetch into pandas dataframe via a select statement
+
+SET #df_ESI_sql_data TO pd.read_sql_query("SELECT [Fin_Texts_4_Snips_ID], [BatesID], [Txt], [Actor], [Stock_Ticker] FROM [" + ESI_DB +"].[dbo].[Fin_Texts_4_SnipsIntent_Senti_Pattern]", conn1)
+
+
+SET df_ESI_sql_data TO pd.read_sql_query("SELECT [Txt] FROM [eDisc_DB_01].[dbo].[Fin_Texts_4_SnipsIntent_Senti_Pattern]",conn1)
+
+OUTPUT("Fetch from "+ ESI_DB +" completed FOR text to be processed")
+
+
+
+#########################################
+
+# If the number of docs is small, we get all types of erroes especially : ValueError: need at least one array to concatenate
+
+# We need to use more docs and unique words FOR it to find at least 2 topics. Thus, I just safely multiply the list by 10 - should not be an issue:
+
+# https://stackoverflow.com/questions/65785949/valueerror-need-at-least-one-array-to-concatenate-in-top2vec-error
+
+#########################################
+
+
+
+IMPORT re
+
+DEFINE FUNCTION utils_preprocess_text(text):
+
+    ## clean (convert to lowercase and remove punctuations and  characters and then strip)
+
+    SET text TO re.sub(r'[^\w\s]', '', str(text).lower().strip())
+
+
+
+    ## Tokenize (convert from string to list)
+
+    SET lst_text TO text.split()
+
+
+
+    ## back to string from list
+
+    SET text TO " ".join(lst_text)
+
+    RETURN text
+
+
+
+
+
+#docs=list(utils_preprocess_text(df_ESI_sql_data['Txt'].values))
+
+
+
+docs=list(df_ESI_sql_data['Txt'].values)
+
+SET model TO Top2Vec(docs*10, speed="learn", workers=8, min_count=5)
+
+SET #model TO Top2Vec(docs, speed="learn", workers=8, min_count=5, embedding_model='universal-sentence-encoder')
+
+SET # Alternate way to write -> model TO Top2Vec(documents=df_ESI_sql_data['Txt'].astype(str).values.tolist(), speed="learn", workers=8)
+
+
+
+OUTPUT("=========== START OF Housekeeping DB TRANSACTIONS ======================================")
+
+OUTPUT("Now let's run the case ESI through this Top2Vec program and insert results into [Fin_Top2Vec] .. ")
+
+OUTPUT("Backup tables before fresh insert")
+
+SET sql1 TO "SELECT * INTO [" + ESI_DB +"].[dbo].[Fin_Top2Vec_BkUp" + t + "] FROM [" + ESI_DB +"].[dbo].[Fin_Top2Vec]"
+
+cursor1.execute(sql1)
+
+conn1.commit()
+
+OUTPUT("Empty [" + ESI_DB +"].[dbo].[Fin_Top2Vec] FOR fresh inserts")
+
+SET del_sql1 TO "DELETE FROM [" + ESI_DB +"].[dbo].[Fin_Top2Vec] "
+
+cursor1.execute(del_sql1)
+
+conn1.commit()
+
+OUTPUT("=========== END OF Housekeeping DB TRANSACTIONS ======================================")
+
+
+
+kw_word1="buy"
+
+kw_word2="sell"
+
+#passengers, customer, blurry, feeling
+
+
+
+TRY:
+
+    OUTPUT("Search documents FOR content semantically similar to "+kw_word1 +" ... ")
+
+    SET documents, document_scores, document_ids TO model.search_documents_by_keywords(keywords=[kw_word1], num_docs=10)
+
+    FOR doc, score, doc_id IN zip(documents, document_scores, document_ids):
+
+            OUTPUT(f"Document: {doc_id}, Score: {score}")
+
+            OUTPUT("-----------")
+
+            OUTPUT(doc)
+
+            OUTPUT("-----------")
+
+            OUTPUT()
+
+            SET sql TO "INSERT INTO [" + ESI_DB + "].[dbo].[Fin_Top2Vec] ([keywrd],[docID],[score],[doc]) VALUES (?,?,?,?)"
+
+            OUTPUT(sql, (kw_word1, int(doc_id), round(score,2), doc))
+
+            cursor1.execute(sql, (kw_word1,int(doc_id),round(score,2), doc))
+
+            conn1.commit()
+
+
+
+except Exception as e:
+
+    OUTPUT("Error - search_documents_by_keywords " + kw_word1 + ": SQL Error or No evidence found")
+
+    OUTPUT(e)
+
+
+
+
+
+TRY:
+
+    OUTPUT("Search documents FOR content semantically similar to "+kw_word2 +" ... ")
+
+    SET documents, document_scores, document_ids TO model.search_documents_by_keywords(keywords=[kw_word2], num_docs=10)
+
+    FOR doc, score, doc_id IN zip(documents, document_scores, document_ids):
+
+        OUTPUT(f"Document: {doc_id}, Score: {score}")
+
+        OUTPUT("-----------")
+
+        OUTPUT(doc)
+
+        OUTPUT("-----------")
+
+        OUTPUT()
+
+        SET sql TO "INSERT INTO [" + ESI_DB + "].[dbo].[Fin_Top2Vec] ([keywrd],[docID],[score],[doc]) VALUES (?,?,?,?)"
+
+        OUTPUT(sql, (kw_word2, int(doc_id), round(score,2), doc))
+
+        cursor1.execute(sql, (kw_word2, int(doc_id), round(score,2), doc))
+
+        conn1.commit()
+
+
+
+except Exception as e:
+
+    OUTPUT("Error - search_documents_by_keywords " + kw_word2 + ": SQL Error or No evidence found")
+
+    OUTPUT(e,"\n")
+
+
+
+
+
+TRY:
+
+    OUTPUT("Search FOR similar words to "+ kw_word1 +" ... ")
+
+    SET words, word_scores TO model.similar_words(keywords=[kw_word1], keywords_neg=[], num_words=5)
+
+    FOR word, score IN zip(words, word_scores):
+
+        OUTPUT(f"{word} {score}")
+
+        OUTPUT("Search FOR similar to "+ word +" Topic")
+
+        SET topic_words, word_scores, topic_scores, topic_nums TO model.search_topics(keywords=[word], num_topics=2)
+
+        FOR str_topic_words, str_word_scores, str_topic_scores, str_topic_nums, IN zip(topic_words, word_scores, topic_scores, topic_nums):
+
+            OUTPUT(str_topic_words)
+
+            OUTPUT(str_word_scores)
+
+            OUTPUT(str_topic_scores)
+
+            OUTPUT(str_topic_nums)
+
+            SET str_topic_words TO ' :: '.join(str(v) FOR v IN str_topic_words)
+
+            SET str_word_scores TO ' :: '.join(str(v) FOR v IN word_scores)
+
+            SET str_topic_scores TO ' :: '.join(str(v) FOR v IN topic_scores)
+
+            SET str_topic_nums TO ' :: '.join(str(v) FOR v IN topic_nums)
+
+            SET sql TO "INSERT INTO [" + ESI_DB + "].[dbo].[Fin_Top2Vec] ([similar_word], [similar_word_score], " \
+
+                                             "[keywrd],[similar_topic_words],[similar_word_scores], [similar_topic_scores], " \
+
+                                             "[similar_topic_nums])  VALUES (?,?,?,?,?,?,?)"
+
+            OUTPUT(sql, (word, score, kw_word1, str_topic_words, str_word_scores, str_topic_scores, str_topic_nums))
+
+            cursor1.execute(sql, (word, score, kw_word1, str_topic_words, str_word_scores, str_topic_scores, str_topic_nums))
+
+            conn1.commit()
+
+
+
+            # OUTPUT("Generate Word Clouds")
+
+            SET # topic_words, word_scores, topic_scores, topic_nums TO model.search_topics(keywords=["buy", "sell"], num_topics=5)
+
+            # FOR topic IN topic_nums:
+
+            #     model.generate_topic_wordcloud(topic)
+
+
+
+except Exception as e:
+
+    OUTPUT("Error - Search FOR similar topic to "+kw_word1+" : SQL error orNo evidence found")
+
+    OUTPUT(e, "\n")
+
+
+
+TRY:
+
+    OUTPUT("Search FOR similar words to "+ kw_word2 +" ... ")
+
+    SET words, word_scores TO model.similar_words(keywords=[kw_word2], keywords_neg=[], num_words=5)
+
+    FOR word, score IN zip(words, word_scores):
+
+        OUTPUT(f"{word} {score}")
+
+        OUTPUT("Search FOR similar to "+ word +" Topic")
+
+        SET topic_words, word_scores, topic_scores, topic_nums TO model.search_topics(keywords=[word], num_topics=2)
+
+        FOR str_topic_words, str_word_scores, str_topic_scores, str_topic_nums, IN zip(topic_words, word_scores, topic_scores, topic_nums):
+
+            OUTPUT(str_topic_words)
+
+            OUTPUT(str_word_scores)
+
+            OUTPUT(str_topic_scores)
+
+            OUTPUT(str_topic_nums)
+
+            SET str_topic_words TO ' :: '.join(str(v) FOR v IN str_topic_words)
+
+            SET str_word_scores TO ' :: '.join(str(v) FOR v IN word_scores)
+
+            SET str_topic_scores TO ' :: '.join(str(v) FOR v IN topic_scores)
+
+            SET str_topic_nums TO ' :: '.join(str(v) FOR v IN topic_nums)
+
+            SET sql TO "INSERT INTO [" + ESI_DB + "].[dbo].[Fin_Top2Vec] ([similar_word], [similar_word_score], " \
+
+                                             "[keywrd],[similar_topic_words],[similar_word_scores], [similar_topic_scores], " \
+
+                                             "[similar_topic_nums])  VALUES (?,?,?,?,?,?,?)"
+
+            OUTPUT(sql, (word, score, kw_word2, str_topic_words, str_word_scores, str_topic_scores, str_topic_nums))
+
+            cursor1.execute(sql, (word, score, kw_word2, str_topic_words, str_word_scores, str_topic_scores, str_topic_nums))
+
+            conn1.commit()
+
+
+
+            # OUTPUT("Generate Word Clouds")
+
+            SET # topic_words, word_scores, topic_scores, topic_nums TO model.search_topics(keywords=["buy", "sell"], num_topics=5)
+
+            # FOR topic IN topic_nums:
+
+            #     model.generate_topic_wordcloud(topic)
+
+
+
+except Exception as e:
+
+    OUTPUT("Error - Search FOR similar topic to " + kw_word2 + " : SQL error or No evidence found")
+
+    OUTPUT(e, "\n")
+
+
