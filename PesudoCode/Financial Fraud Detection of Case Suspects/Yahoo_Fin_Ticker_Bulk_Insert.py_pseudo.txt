@@ -1,0 +1,157 @@
+
+
+IMPORT pandas as pd
+
+IMPORT yfinance as yf
+
+from yahoofinancials IMPORT YahooFinancials
+
+IMPORT matplotlib.pyplot as plt
+
+IMPORT pyodbc
+
+from datetime IMPORT datetime
+
+SET pd.options.display.width TO 0
+
+IMPORT os
+
+IMPORT sys
+
+OUTPUT('Number of arguments:', len(sys.argv), 'arguments.')
+
+OUTPUT('Argument List:', str(sys.argv))
+
+
+
+
+
+SET t TO str(datetime.today().year) + str(datetime.today().month)+ str(datetime.today().day)+"_"+str(datetime.today().hour)+"_"+str(datetime.today().minute)+"_"+str(datetime.today().second)
+
+OUTPUT(t)
+
+OUTPUT("Program to gather financial stock details of stock tickers PASS as command line arguments")
+
+OUTPUT("USage: Yahoo_Fin.py T AAPL AMZL BAC NESW TDOC VSTM ETSY")
+
+OUTPUT("Reading DB connection parameters from file...")
+
+# Read DB connection parameters from file
+
+SET f TO open(r"DBConn.txt","r")
+
+SET server TO f.readline().rstrip() # remove any line breaks at the end of the line
+
+SET ESI_DB TO f.readline().rstrip() # remove any line breaks at the end of the line
+
+SET Master_DB TO f.readline().rstrip() # remove any line breaks at the end of the line
+
+f.close()
+
+OUTPUT("File read complete")
+
+
+
+
+
+OUTPUT("Opening ESI DB Connection...")
+
+SET conn1 TO pyodbc.connect('Driver={SQL Server Native Client 11.0};Server='+ server +';Database=' + ESI_DB +';Trusted_Connection=yes;')
+
+SET cursor1 TO conn1.cursor()
+
+OUTPUT("DB Connection successfully opened")
+
+# Fetch into pandas dataframe via a select statement
+
+SET df_ESI_sql_data TO pd.read_sql_query("select Convert(date, min(a.Tweet_Dt)) 'Case_min_dt', Convert(date,max(a.Tweet_Dt)) 'Case_max_dt' FROM (select Tweet_Dt from [dbo].ESI_Twitter union select CreationTime from [dbo].CASE_eMails union   select Post_Dt from [dbo].ESI_Facebook  union    select f_DateCreated from [dbo].ESI_MSOff union  select Msg_Dt from [dbo].ESI_SMS_WHATSAPP) a", conn1)
+
+OUTPUT("Fetch from "+ ESI_DB +" completed FOR case timelines")
+
+
+
+my_file="Yahoo_Fin_Ticker_data.csv"
+
+# check IF file exists and delete it
+
+IF os.path.exists(my_file):
+
+    os.remove(my_file)
+
+
+
+
+SET n TO len(sys.argv)
+
+OUTPUT("Total arguments passed including file name:", n)
+
+# Arguments passed
+
+#OUTPUT("\nName of Python script:", sys.argv[0])
+
+#OUTPUT("\nArguments passed:", end=" ")
+
+
+
+FOR i IN range(1, n):
+
+    SET OUTPUT(sys.argv[i], end TO " ")
+
+    SET aapl_df TO yf.download(sys.argv[i],
+
+                       start=pd.to_datetime(df_ESI_sql_data['Case_min_dt'], format='%Y-%m-%d').item(),
+
+                       end=pd.to_datetime(df_ESI_sql_data['Case_max_dt'], format='%Y-%m-%d').item(),
+
+                       progress=False)
+
+    aapl_df['Ticker']=sys.argv[i] #add a col to store the ticket symbol
+
+    # #OUTPUT(aapl_df)
+
+    aapl_df=aapl_df.to_csv('Yahoo_Fin_Ticker_data.csv', mode='a', header=False) # Keep Appending
+
+
+
+
+
+SET # ticker TO yf.Ticker('AAPL')
+
+SET # aapl_df TO ticker.history(period="5y")
+
+# aapl_df['Close'].plot(title="APPLE's stock price")
+
+# plt.show()
+
+
+
+OUTPUT(ESI_DB + ".[dbo].[Fin_ESI_Ticket_Stock] - ALL Rows Deleted")
+
+SET del_sql2 TO "DELETE FROM " + ESI_DB + ".[dbo].[Fin_ESI_Ticket_Stock]"
+
+cursor1.execute(del_sql2)
+
+conn1.commit()
+
+OUTPUT("Bulk insert from Yahoo_Fin_Ticker_data.csv...")
+
+
+
+SET qry TO "BULK INSERT " + ESI_DB + ".[dbo].[Fin_ESI_Ticket_Stock] FROM 'Yahoo_Fin_Ticker_data.csv' WITH (FORMAT TO 'CSV')"
+
+OUTPUT(qry)
+
+cursor1.execute(qry)
+
+conn1.commit()
+
+OUTPUT("Insert into [dbo].[Fin_ESI_Ticket_Stock] completed.")
+
+
+
+
+
+
+
+
+
